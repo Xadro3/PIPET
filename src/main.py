@@ -47,7 +47,7 @@ class SlideSlicer:
         slice_positions =[]
         for i in range(horizontal_slices):
             for y in range(vertical_slices):
-                slice_positions.append((y*self.slice_width, i*self.slice_height))
+                slice_positions.append((i*self.slice_height,y*self.slice_width ))
         self.slice_slide(slice_positions)
         return
 
