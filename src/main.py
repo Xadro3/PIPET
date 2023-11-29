@@ -36,7 +36,8 @@ class SlideSlicer:
          return
 
     def save_slice(self, slice, index):
-        slice.save(r"C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\ENTE\data/slice" + str(index) + ".tif")
+        print("Writing slice"+ str(index))
+        slice.save(r"G:\Documents\Bachelor Data\slice" + str(index) + ".tif")
         return
 
     def define_slices(self):
