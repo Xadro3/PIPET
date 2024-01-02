@@ -43,7 +43,7 @@ class SlideSlicer:
 
     def stitch_slide(self, slice_list):
         stitched_image = Image.new('RGBA', self.slide.dimensions, "white")
-        stitched_image.save(r"G:\Documents\Bachelor Data\slice complete compressed.tiff", format="TIFF", compression='jpeg')
+        #stitched_image.save(r"G:\Documents\Bachelor Data\slice complete compressed.tiff", format="TIFF", compression='jpeg')
         for slice in slice_list:
             stitched_image.paste(slice.data, slice.location)
         self.save_slice(stitched_image, "complete")
@@ -60,7 +60,7 @@ class SlideSlicer:
         self.stitch_slide(slice_list)
         return
 
-    def save_slice(self, slice, index):
+    def save_slice(self, slice, index, completeslice):
         print("Writing slice" + str(index))
         slice.save(r"G:\Documents\Bachelor Data\compressed slice" + str(index) + ".tiff", format="TIFF", compression='jpeg')
         return
