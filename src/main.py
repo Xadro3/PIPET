@@ -1,9 +1,23 @@
 import PIL.Image
+import numpy as np
 from PIL import Image
 import math
 from slice import Slice
+import numpy
+import torch
+import torchvision.transforms as transforms
+import onnx
+import onnxruntime
 import os
-#from PIL.ExifTags import TAGS
+import cv2
+from torch.utils.data import DataLoader, TensorDataset
+from onnx2torch import convert
+
+#use https://github.com/Talmaj/onnx2pytorch
+
+vipshome = r'D:\Benutzer\Downloads\Stuff\vips-dev-w64-all-8.15.1\vips-dev-8.15\bin'
+os.environ['PATH'] = vipshome + ';' + os.environ['PATH']
+import pyvips
 PIL.Image.MAX_IMAGE_PIXELS = None
 OPENSLIDE_PATH = r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\openslide-win64-20231011\openslide-win64-20231011\bin'
 
@@ -22,14 +36,10 @@ class SlideSlicer:
         self.slide = None
 
     def open_slide(self):
-        self.slide = openslide.OpenSlide(self.slide_path)
+        temp_image = Image.open(self.slide_path)
+
+        self.slide = openslide.ImageSlide(temp_image)
         print(self.slide.properties)
-        # with Image.open(r'G:\Documents\Bachelor Data\slicecomplete.tiff') as im:
-        #     exif = im.getexif()
-        #     for tag_id in exif:
-        #         tag = TAGS.get(tag_id, tag_id)
-        #         content = exif.get(tag_id)
-        #         print(f'{tag:25}: {content}')
         self.define_slices()
 
     def close_slide(self):
@@ -42,27 +52,36 @@ class SlideSlicer:
         return
 
     def stitch_slide(self, slice_list):
-        stitched_image = Image.new('RGBA', self.slide.dimensions, "white")
-        #stitched_image.save(r"G:\Documents\Bachelor Data\slice complete compressed.tiff", format="TIFF", compression='jpeg')
+        stitched_image = Image.new('RGB', self.slide.dimensions, "white")
         for slice in slice_list:
             stitched_image.paste(slice.data, slice.location)
-        self.save_slice(stitched_image, "complete")
+            slice.close()
+        self.save_slice(stitched_image,True)
+        #out = pyvips.Image.arrayjoin(array_images, across=len(list_of_pictures))
+
         return
 
     def slice_slide(self, slice_positions):
         slice_list = []
         for slice_position in slice_positions:
+            print("Slicing "+f'{slice_position[0]}{slice_position[1]}')
             slice = self.slide.read_region(slice_position, 0, (self.slice_width, self.slice_height))
             temp_slice = Slice(slice, slice_position, self.slice_width, self.slice_height)
-            slice_list.append(temp_slice)
-            self.save_slice(slice, slice_position)
-        print(len(slice_list))
+            slice_list.append(self.run_model(temp_slice))
         self.stitch_slide(slice_list)
         return
 
-    def save_slice(self, slice, index, completeslice):
-        print("Writing slice" + str(index))
-        slice.save(r"G:\Documents\Bachelor Data\compressed slice" + str(index) + ".tiff", format="TIFF", compression='jpeg')
+    #vips_img.write_to_file(r'G:\Documents\Bachelor Data\scanned_slice.tiff', pyramid=True, tile=True, compression="jpeg")
+    def save_slice(self, slice, complete_slice):
+
+        if complete_slice:
+                pyvips.Image.new_from_array(slice).write_to_file(r'G:\Documents\Bachelor Data\slice complete compressed.tiff',compression='jpeg')
+        else:
+                print("Writing:"+str(slice.location)+" ")
+                slice.data.save(r'G:\Documents\Bachelor Data\scanned_slice '+str(slice.location) +'.tiff')
+
+        slice.close()
+
         return
 
     def define_slices(self):
@@ -76,8 +95,60 @@ class SlideSlicer:
         self.slice_slide(slice_positions)
         return
 
+    def resize_slices(self,slice_list, resize_size):
+        for slice in slice_list:
+            slice.data = slice.data.resize(resize_size)
+        return slice_list
+
+
+    def run_model(self, slice):
+
+        onnx_model = onnx.load_model(r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\ENTE\data\seg_mod_256_2023-02-15.onnx')
+        temp_slice = slice.data.resize((256, 256))
+        temp_slice = temp_slice.convert("RGB")
+        temp_slice = numpy.array(temp_slice)
+        transfromed_input = torch.from_numpy(temp_slice).type(torch.float32).permute(2, 0, 1)
+
+
+        print(transfromed_input.shape)
+
+        print("Running onnmodel")
+
+        pytorch_model = convert(onnx_model)
+
+        pytorch_model.eval()
+
+
+        logits = pytorch_model(transfromed_input)
+
+        logits = logits.sigmoid()
+        logits = logits.squeeze()
+        logits = logits.squeeze()
+
+        img_array = logits.detach().numpy()
+
+        img_array = np.array(img_array)
+
+        vips_img = pyvips.Image.new_from_memory(img_array.data, img_array.shape[1], img_array.shape[0], 1, "uchar")
+
+
+        pil_image = Image.fromarray(img_array)
+
+        pil_image = pil_image.resize((1024,1024))
+
+        vips_img = pyvips.Image.new_from_array(pil_image)
+
+        slice.update_data(vips_img)
+
+        #self.save_slice(slice,False)
+
+        return slice
+
+
+
 
 if __name__ == "__main__":
-    slide_slicer = SlideSlicer(r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\Openslided Images\sample.tif',
-                               5000, 5000)
+    slide_slicer = SlideSlicer(r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\Openslided Images\sample.jpf',
+                               1024, 1024)
     slide_slicer.open_slide()
+    #slide_slicer.load_onnx_model([])
