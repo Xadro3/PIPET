@@ -5,15 +5,9 @@ import math
 from slice import Slice
 import numpy
 import torch
-import torchvision.transforms as transforms
 import onnx
-import onnxruntime
 import os
-import cv2
-from torch.utils.data import DataLoader, TensorDataset
 from onnx2torch import convert
-
-#use https://github.com/Talmaj/onnx2pytorch
 
 vipshome = r'D:\Benutzer\Downloads\Stuff\vips-dev-w64-all-8.15.1\vips-dev-8.15\bin'
 os.environ['PATH'] = vipshome + ';' + os.environ['PATH']
@@ -27,7 +21,7 @@ if hasattr(os, 'add_dll_directory'):
 else:
     import openslide
 
-#1024x1024 resize to 256x256
+
 class SlideSlicer:
     def __init__(self, slide_path, width, height):
         self.slide_path = slide_path
@@ -109,6 +103,7 @@ class SlideSlicer:
         temp_slice = numpy.array(temp_slice)
         transfromed_input = torch.from_numpy(temp_slice).type(torch.float32).permute(2, 0, 1)
 
+        Image.fromarray(temp_slice).save(r'G:\Documents\Bachelor Data\scanned_slice '+str(slice.location) +'.tiff')
 
         print(transfromed_input.shape)
 
