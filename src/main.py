@@ -3,6 +3,7 @@ import numpy as np
 from PIL import Image
 import math
 from slice import Slice
+import utils
 import numpy
 import torch
 import onnx
@@ -31,7 +32,8 @@ class SlideSlicer:
 
     def open_slide(self):
         temp_image = Image.open(self.slide_path)
-
+        utils.Preprocessing.apply_tissue_mask(temp_image,"OTSU")
+        exit()
         self.slide = openslide.ImageSlide(temp_image)
         print(self.slide.properties)
         self.define_slices()
@@ -48,10 +50,15 @@ class SlideSlicer:
     def stitch_slide(self, slice_list):
         stitched_image = Image.new('RGB', self.slide.dimensions, "white")
         for slice in slice_list:
+            slice.data = Image.fromarray(slice.data)
+            slice.data = slice.data.resize((1024, 1024))
             stitched_image.paste(slice.data, slice.location)
-            slice.close()
+            #slice.close()
         self.save_slice(stitched_image,True)
         #out = pyvips.Image.arrayjoin(array_images, across=len(list_of_pictures))
+
+
+
 
         return
 
@@ -80,11 +87,11 @@ class SlideSlicer:
 
     def define_slices(self):
         slide_width, slide_height = self.slide.dimensions
-        vertical_slices = math.ceil(slide_height / self.slice_height)
-        horizontal_slices = math.ceil(slide_width / self.slice_width)
+        self.vertical_slices = math.ceil(slide_height / self.slice_height)
+        self.horizontal_slices = math.ceil(slide_width / self.slice_width)
         slice_positions = []
-        for i in range(horizontal_slices):
-            for y in range(vertical_slices):
+        for i in range(self.horizontal_slices):
+            for y in range(self.vertical_slices):
                 slice_positions.append((i * self.slice_height, y * self.slice_width))
         self.slice_slide(slice_positions)
         return
@@ -116,7 +123,7 @@ class SlideSlicer:
 
         logits = pytorch_model(transfromed_input)
 
-        logits = logits.sigmoid()
+        #logits = logits.sigmoid()
         logits = logits.squeeze()
         logits = logits.squeeze()
 
@@ -124,16 +131,18 @@ class SlideSlicer:
 
         img_array = np.array(img_array)
 
-        vips_img = pyvips.Image.new_from_memory(img_array.data, img_array.shape[1], img_array.shape[0], 1, "uchar")
+        vips_img = pyvips.Image.new_from_memory(img_array, img_array.shape[1], img_array.shape[0], 1, "float")
+
+        vips_img.write_to_file(r'G:\Documents\Bachelor Data\slice_test.tiff', compression='jpeg')
 
 
-        pil_image = Image.fromarray(img_array)
+        #pil_image = Image.fromarray(img_array)
 
-        pil_image = pil_image.resize((1024,1024))
+        #pil_image = pil_image.resize((1024,1024))
 
-        vips_img = pyvips.Image.new_from_array(pil_image)
+        #vips_img = pyvips.Image.new_from_array(pil_image)
 
-        slice.update_data(vips_img)
+        slice.update_data(img_array)
 
         #self.save_slice(slice,False)
 
