@@ -6,7 +6,7 @@ class Preprocessing:
 
     @staticmethod
     def apply_tissue_mask(image, thresholding_tech, threshold=127, filter=True, rm_noise=True,noise_filter_level=50,):
-
+        original_image = cv2.cvtColor(numpy.array(image),cv2.COLOR_RGB2BGR)
         image = cv2.cvtColor(numpy.array(image),cv2.COLOR_RGB2GRAY)
 
         if rm_noise:
@@ -24,6 +24,12 @@ class Preprocessing:
         elif thresholding_tech == "SIMPLE":
             Preprocessing.simple_thresholding(threshold)
 
+        combined_image = Preprocessing.merge(original_image,mask)
+
+        cv2.imwrite(r'G:\Documents\Bachelor Data\merged.tiff', combined_image)
+
+        return combined_image
+
     @staticmethod
     def otsus_binarization(image, filter):
 
@@ -38,3 +44,11 @@ class Preprocessing:
     #def adaptive_thresholding(self):
 
     #def simple_thresholding(self, threshold):
+    @staticmethod
+    def merge(image, mask):
+
+        mask = cv2.bitwise_not(mask)
+
+        combined_image = cv2.bitwise_and(image, image, mask=mask)
+
+        return combined_image
