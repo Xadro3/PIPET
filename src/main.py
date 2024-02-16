@@ -120,31 +120,33 @@ class SlideSlicer:
 
         pytorch_model.eval()
 
+        if slice.evaluate():
 
-        logits = pytorch_model(transfromed_input)
+            logits = pytorch_model(transfromed_input)
 
-        #logits = logits.sigmoid()
-        logits = logits.squeeze()
-        logits = logits.squeeze()
+            #logits = logits.sigmoid()
+            logits = logits.squeeze()
+            logits = logits.squeeze()
 
-        img_array = logits.detach().numpy()
+            img_array = logits.detach().numpy()
 
-        img_array = np.array(img_array)
+            img_array = np.array(img_array)
 
-        vips_img = pyvips.Image.new_from_memory(img_array, img_array.shape[1], img_array.shape[0], 1, "float")
+            vips_img = pyvips.Image.new_from_memory(img_array, img_array.shape[1], img_array.shape[0], 1, "float")
 
-        vips_img.write_to_file(r'G:\Documents\Bachelor Data\slice_test.tiff', compression='jpeg')
+            vips_img.write_to_file(r'G:\Documents\Bachelor Data\slice_test.tiff', compression='jpeg')
 
 
-        #pil_image = Image.fromarray(img_array)
+            #pil_image = Image.fromarray(img_array)
 
-        #pil_image = pil_image.resize((1024,1024))
+            #pil_image = pil_image.resize((1024,1024))
 
-        #vips_img = pyvips.Image.new_from_array(pil_image)
+            #vips_img = pyvips.Image.new_from_array(pil_image)
 
-        slice.update_data(img_array)
+            slice.update_data(img_array)
 
-        #self.save_slice(slice,False)
+            #self.save_slice(slice,False)
+
 
         return slice
 
