@@ -6,10 +6,12 @@ class Preprocessing:
 
     @staticmethod
     def apply_tissue_mask(image, thresholding_tech, threshold=127, filter=True, rm_noise=True,noise_filter_level=50,):
+        print("Starting masking process")
         original_image = cv2.cvtColor(numpy.array(image),cv2.COLOR_RGB2BGR)
         image = cv2.cvtColor(numpy.array(image),cv2.COLOR_RGB2GRAY)
 
         if rm_noise:
+            print("Removing noise")
             kernel = numpy.ones((noise_filter_level, noise_filter_level), numpy.uint8)
             image = cv2.morphologyEx(image,cv2.MORPH_OPEN,kernel)
             image = cv2.medianBlur(image,5)
@@ -32,7 +34,7 @@ class Preprocessing:
 
     @staticmethod
     def otsus_binarization(image, filter):
-
+        print("applying Otsus_binarization")
         if filter:
             blurred_image = cv2.GaussianBlur(image,(5,5),0)
             ret, mask = cv2.threshold(blurred_image,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
@@ -46,9 +48,16 @@ class Preprocessing:
     #def simple_thresholding(self, threshold):
     @staticmethod
     def merge(image, mask):
+        print("merging mask with source.")
+        kernel = numpy.ones((20,20), numpy.uint8)
 
         mask = cv2.bitwise_not(mask)
 
+        mask = cv2.dilate(mask, kernel, 1)
+
+
         combined_image = cv2.bitwise_and(image, image, mask=mask)
+
+        print(type(combined_image))
 
         return combined_image

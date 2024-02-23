@@ -1,8 +1,8 @@
 import cv2
+import numpy
 import os
 vipshome = r'D:\Benutzer\Downloads\Stuff\vips-dev-w64-all-8.15.1\vips-dev-8.15\bin'
 os.environ['PATH'] = vipshome + ';' + os.environ['PATH']
-import pyvips
 
 
 class Slice:
@@ -19,7 +19,12 @@ class Slice:
         self.data = data
 
     def evaluate(self):
-        if cv2.countNonZero(self.data)<=0:
+
+        temp_data = numpy.asarray(self.data)
+        temp_data = cv2.cvtColor(temp_data,cv2.COLOR_RGB2GRAY)
+        if cv2.countNonZero(temp_data)<=0:
+            print("Slice contains data.")
             return True
         else:
+            print("Slice does not contain data")
             return False

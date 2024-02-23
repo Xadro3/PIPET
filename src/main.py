@@ -32,9 +32,9 @@ class SlideSlicer:
 
     def open_slide(self):
         temp_image = Image.open(self.slide_path)
-        utils.Preprocessing.apply_tissue_mask(temp_image,"OTSU")
-        exit()
-        self.slide = openslide.ImageSlide(temp_image)
+        temp_image = utils.Preprocessing.apply_tissue_mask(temp_image,"OTSU")
+        self.slide = openslide.open_slide(Image.fromarray(temp_image))
+        print("Opened image with properties: ")
         print(self.slide.properties)
         self.define_slices()
 
@@ -43,19 +43,17 @@ class SlideSlicer:
             self.slide.close()
             self.slide = None
 
-    def process_slide(self):
-        # dosomething
-        return
 
     def stitch_slide(self, slice_list):
         stitched_image = Image.new('RGB', self.slide.dimensions, "white")
         for slice in slice_list:
+            print("Stitching slice to:"+str(slice.location))
             slice.data = Image.fromarray(slice.data)
             slice.data = slice.data.resize((1024, 1024))
             stitched_image.paste(slice.data, slice.location)
             #slice.close()
         self.save_slice(stitched_image,True)
-        #out = pyvips.Image.arrayjoin(array_images, across=len(list_of_pictures))
+
 
 
 
@@ -76,16 +74,18 @@ class SlideSlicer:
     def save_slice(self, slice, complete_slice):
 
         if complete_slice:
-                pyvips.Image.new_from_array(slice).write_to_file(r'G:\Documents\Bachelor Data\slice complete compressed.tiff',compression='jpeg')
+            print("Writing finished image.")
+            pyvips.Image.new_from_array(slice).write_to_file(r'G:\Documents\Bachelor Data\slice complete compressed.tiff',compression='jpeg')
         else:
-                print("Writing:"+str(slice.location)+" ")
-                slice.data.save(r'G:\Documents\Bachelor Data\scanned_slice '+str(slice.location) +'.tiff')
+            print("Writing:"+str(slice.location)+" ")
+            slice.data.save(r'G:\Documents\Bachelor Data\scanned_slice '+str(slice.location) +'.tiff')
 
         slice.close()
 
         return
 
     def define_slices(self):
+        print("Defining slices.")
         slide_width, slide_height = self.slide.dimensions
         self.vertical_slices = math.ceil(slide_height / self.slice_height)
         self.horizontal_slices = math.ceil(slide_width / self.slice_width)
@@ -93,6 +93,7 @@ class SlideSlicer:
         for i in range(self.horizontal_slices):
             for y in range(self.vertical_slices):
                 slice_positions.append((i * self.slice_height, y * self.slice_width))
+        print("Defined: ",len(slice_positions)," Slices.")
         self.slice_slide(slice_positions)
         return
 
@@ -112,15 +113,19 @@ class SlideSlicer:
 
         Image.fromarray(temp_slice).save(r'G:\Documents\Bachelor Data\scanned_slice '+str(slice.location) +'.tiff')
 
-        print(transfromed_input.shape)
 
-        print("Running onnmodel")
+
+
 
         pytorch_model = convert(onnx_model)
 
         pytorch_model.eval()
 
+        slice.update_data(temp_slice)
+
         if slice.evaluate():
+
+            print("Evaluating slice.")
 
             logits = pytorch_model(transfromed_input)
 
@@ -137,15 +142,7 @@ class SlideSlicer:
             vips_img.write_to_file(r'G:\Documents\Bachelor Data\slice_test.tiff', compression='jpeg')
 
 
-            #pil_image = Image.fromarray(img_array)
-
-            #pil_image = pil_image.resize((1024,1024))
-
-            #vips_img = pyvips.Image.new_from_array(pil_image)
-
             slice.update_data(img_array)
-
-            #self.save_slice(slice,False)
 
 
         return slice
@@ -154,7 +151,6 @@ class SlideSlicer:
 
 
 if __name__ == "__main__":
-    slide_slicer = SlideSlicer(r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\Openslided Images\sample.jpf',
+    slide_slicer = SlideSlicer(r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\Openslided Images\sample.tif',
                                1024, 1024)
     slide_slicer.open_slide()
-    #slide_slicer.load_onnx_model([])
