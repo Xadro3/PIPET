@@ -1,5 +1,6 @@
 import numpy
 import cv2
+import numpy as np
 
 
 class Preprocessing:
@@ -55,8 +56,18 @@ class Preprocessing:
 
         mask = cv2.dilate(mask, kernel, 1)
 
-
         combined_image = cv2.bitwise_and(image, image, mask=mask)
+
+        height, width, _ = combined_image.shape
+
+        black_pixels = np.where(
+            (combined_image[:, :, 0] == 0) &
+            (combined_image[:, :, 1] == 0) &
+            (combined_image[:, :, 2] == 0)
+        )
+        combined_image[black_pixels] = [255, 255, 255]
+
+        combined_image = cv2.cvtColor(combined_image, cv2.COLOR_BGR2RGB)
 
         print(type(combined_image))
 

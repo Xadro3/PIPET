@@ -33,7 +33,10 @@ class SlideSlicer:
     def open_slide(self):
         temp_image = Image.open(self.slide_path)
         temp_image = utils.Preprocessing.apply_tissue_mask(temp_image,"OTSU")
-        self.slide = openslide.open_slide(Image.fromarray(temp_image))
+        Image.fromarray(temp_image).save(r'G:\Documents\Bachelor Data\fresh_from_thresholding.tiff')
+        self.slide = openslide.ImageSlide(Image.fromarray(temp_image))
+        test = self.slide.read_region((0, 0),0,self.slide.dimensions)
+        test.save(r'G:\Documents\Bachelor Data\converted_to_openslide.tiff')
         print("Opened image with properties: ")
         print(self.slide.properties)
         self.define_slices()
@@ -48,7 +51,6 @@ class SlideSlicer:
         stitched_image = Image.new('RGB', self.slide.dimensions, "white")
         for slice in slice_list:
             print("Stitching slice to:"+str(slice.location))
-            slice.data = Image.fromarray(slice.data)
             slice.data = slice.data.resize((1024, 1024))
             stitched_image.paste(slice.data, slice.location)
             #slice.close()
@@ -75,7 +77,7 @@ class SlideSlicer:
 
         if complete_slice:
             print("Writing finished image.")
-            pyvips.Image.new_from_array(slice).write_to_file(r'G:\Documents\Bachelor Data\slice complete compressed.tiff',compression='jpeg')
+            pyvips.Image.new_from_array(slice).write_to_file(r'G:\Documents\Bachelor Data\slice complete compressed.tiff',pyramid=True, tile=True, compression="jpeg")
         else:
             print("Writing:"+str(slice.location)+" ")
             slice.data.save(r'G:\Documents\Bachelor Data\scanned_slice '+str(slice.location) +'.tiff')
@@ -106,16 +108,15 @@ class SlideSlicer:
     def run_model(self, slice):
 
         onnx_model = onnx.load_model(r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\ENTE\data\seg_mod_256_2023-02-15.onnx')
+        slice.data.save(r'G:\Documents\Bachelor Data\sliced_slice '+str(slice.location) +'.tiff')
         temp_slice = slice.data.resize((256, 256))
+        temp_slice.save(r'G:\Documents\Bachelor Data\resized_slice '+str(slice.location) +'.tiff')
         temp_slice = temp_slice.convert("RGB")
+        temp_slice.save(r'G:\Documents\Bachelor Data\rgb_slice ' + str(slice.location) + '.tiff')
         temp_slice = numpy.array(temp_slice)
-        transfromed_input = torch.from_numpy(temp_slice).type(torch.float32).permute(2, 0, 1)
+        transformed_input = torch.from_numpy(temp_slice).type(torch.float32).permute(2, 0, 1)
 
-        Image.fromarray(temp_slice).save(r'G:\Documents\Bachelor Data\scanned_slice '+str(slice.location) +'.tiff')
-
-
-
-
+        #Image.fromarray(temp_slice).save(r'G:\Documents\Bachelor Data\scanned_slice '+str(slice.location) +'.tiff')
 
         pytorch_model = convert(onnx_model)
 
@@ -123,26 +124,35 @@ class SlideSlicer:
 
         slice.update_data(temp_slice)
 
-        if slice.evaluate():
+        print("Evaluating slice.")
 
-            print("Evaluating slice.")
+        output = pytorch_model(transformed_input)
 
-            logits = pytorch_model(transfromed_input)
+        sig = torch.nn.Sigmoid()
+        output = sig(output)
+        output = output.squeeze()
+        output = output.squeeze()
+        img_array = output.detach().numpy()
 
-            #logits = logits.sigmoid()
-            logits = logits.squeeze()
-            logits = logits.squeeze()
+        img_array = np.array(img_array)
 
-            img_array = logits.detach().numpy()
+        slice.update_data(img_array)
 
-            img_array = np.array(img_array)
+        numpy_array = transformed_input.permute(1, 2, 0).cpu().numpy()
 
-            vips_img = pyvips.Image.new_from_memory(img_array, img_array.shape[1], img_array.shape[0], 1, "float")
+        # Convert the NumPy array to a PIL Image
+        pil_image = Image.fromarray(numpy_array.astype('uint8'))
 
-            vips_img.write_to_file(r'G:\Documents\Bachelor Data\slice_test.tiff', compression='jpeg')
+        #pil_image.show()
 
 
-            slice.update_data(img_array)
+        slice.data = Image.fromarray((slice.data* 255).astype(numpy.uint8))
+        slice.data = slice.data.point(lambda x: 1 if x > 120 else 0, mode='1')
+        #slice.data.save(r'G:\Documents\Bachelor Data\scanned_slice ' + str(slice.location) + '.tiff')
+        #vips_img = pyvips.Image.new_from_memory(slice.data, img_array.shape[1], img_array.shape[0], 1, "float")
+
+        #vips_img.write_to_file(r'G:\Documents\Bachelor Data\slice_test.tiff', compression='jpeg')
+
 
 
         return slice
@@ -151,6 +161,6 @@ class SlideSlicer:
 
 
 if __name__ == "__main__":
-    slide_slicer = SlideSlicer(r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\Openslided Images\sample.tif',
+    slide_slicer = SlideSlicer(r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\Openslided Images\sample5K.tif',
                                1024, 1024)
     slide_slicer.open_slide()
