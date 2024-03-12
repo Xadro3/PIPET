@@ -8,8 +8,8 @@ class Preprocessing:
     @staticmethod
     def apply_tissue_mask(image, thresholding_tech, threshold=127, filter=True, rm_noise=True,noise_filter_level=50,):
         print("Starting masking process")
-        original_image = cv2.cvtColor(numpy.array(image),cv2.COLOR_RGB2BGR)
-        image = cv2.cvtColor(numpy.array(image),cv2.COLOR_RGB2GRAY)
+        original_image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
         if rm_noise:
             print("Removing noise")
@@ -27,7 +27,9 @@ class Preprocessing:
         elif thresholding_tech == "SIMPLE":
             Preprocessing.simple_thresholding(threshold)
 
-        combined_image = Preprocessing.merge(original_image,mask)
+        combined_image = Preprocessing.merge(original_image, mask)
+        del original_image
+        del mask
 
         cv2.imwrite(r'G:\Documents\Bachelor Data\merged.tiff', combined_image)
 
