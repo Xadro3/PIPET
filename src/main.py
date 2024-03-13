@@ -9,6 +9,16 @@ import torch
 import onnx
 import os
 import tempfile
+
+from os import path, listdir
+from typing import Union, Tuple
+from skimage import io
+from pyvips import Image as VipsImage, BandFormat
+from skimage.transform import resize
+from torch import from_numpy, float32
+from numpy import uint8, concatenate, ubyte, asarray
+from tqdm import tqdm
+
 from onnx2torch import convert
 
 vipshome = r'D:\Benutzer\Downloads\Stuff\vips-dev-w64-all-8.15.1\vips-dev-8.15\bin'
@@ -19,7 +29,8 @@ OPENSLIDE_PATH = r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\openslide
 
 if hasattr(os, 'add_dll_directory'):
     with os.add_dll_directory(OPENSLIDE_PATH):
-        import openslide
+        import openslide #as OpenSlide
+        from openslide.deepzoom import DeepZoomGenerator
 else:
     import openslide
 
@@ -86,7 +97,6 @@ class SlideSlicer:
         stitched_image = Image.new('RGB', self.slide.dimensions, "white")
         for slice in slice_list:
             print("Stitching slice to:"+str(slice.location))
-            slice.data = slice.data.resize((1024, 1024))
             stitched_image.paste(slice.data, slice.location)
             #slice.close()
         self.save_slice(stitched_image,True)
@@ -107,7 +117,6 @@ class SlideSlicer:
         self.stitch_slide(slice_list)
         return
 
-    #vips_img.write_to_file(r'G:\Documents\Bachelor Data\scanned_slice.tiff', pyramid=True, tile=True, compression="jpeg")
     def save_slice(self, slice, complete_slice):
 
         if complete_slice:
@@ -144,11 +153,10 @@ class SlideSlicer:
 
         onnx_model = onnx.load_model(r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\ENTE\data\seg_mod_256_2023-02-15.onnx')
         pytorch_model = convert(onnx_model)
-        pytorch_model.eval()
+        #pytorch_model.eval()
 
-        temp_slice = slice.data.resize((256, 256))
-        temp_slice = temp_slice.convert("RGB")
-        temp_slice = numpy.array(temp_slice)
+        slice.data = slice.data.convert("RGB")
+        temp_slice = resize(asarray(slice.data),(256,256))
         transformed_input = torch.from_numpy(temp_slice).type(torch.float32).permute(2, 0, 1)
 
         output = pytorch_model(transformed_input)
@@ -156,18 +164,10 @@ class SlideSlicer:
         output = output.sigmoid()
         output = output.squeeze(0).squeeze(0)
         img_array = output.detach().numpy()
+        img_array = resize(img_array, (1024, 1024))
 
-        slice.update_data(img_array)
-
-        numpy_array = transformed_input.permute(1, 2, 0).cpu().numpy()
-        # Convert the NumPy array to a PIL Image
-        pil_image = Image.fromarray(numpy_array.astype('uint8'))
-
-        Image.fromarray(img_array).save(r'G:\Documents\Bachelor Data\sigmoid-slice '+str(slice.location) +'.tiff')
-        pil_image.save(r'G:\Documents\Bachelor Data\back-transmuted_slice '+str(slice.location) +'.tiff')
-
-        slice.data = Image.fromarray((slice.data*255).astype(numpy.uint8))
-        slice.data = slice.data.point(lambda x: 1 if x > 120 else 0, mode='1')
+        slice.data = Image.fromarray((img_array*255).astype(numpy.uint8))
+        #slice.data = slice.data.point(lambda x: 1 if x > 120 else 0, mode='1')
 
         return slice
 
@@ -176,3 +176,5 @@ if __name__ == "__main__":
     slide_slicer = SlideSlicer(r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\Openslided Images\sample5K.tif',
                                1024, 1024)
     slide_slicer.open_slide(False)
+    #run_segmentation_pipeline(r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\Openslided Images\sample5K.tif', r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\ENTE\data\seg_mod_256_2023-02-15.onnx',
+    #                          (1024,1024),(1, 3, 256, 256), r'G:\Documents\Bachelor Data',False)
