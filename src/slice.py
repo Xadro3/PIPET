@@ -24,12 +24,13 @@ class Slice:
 
         temp_data = numpy.asarray(self.data)
         temp_data = cv2.cvtColor(temp_data, cv2.COLOR_RGB2GRAY)
+        _, temp_data = cv2.threshold(temp_data, 127, 255, cv2.THRESH_BINARY)
         if cv2.countNonZero(temp_data) == temp_data.size:
-            print("Slice contains data.")
-            return True
-        else:
-            print("Slice does not contain data")
+            print("Slice does not contain data.")
             return False
+        else:
+            print("Slice does contain data")
+            return True
 
     def apply_tissuemask(self, thresholding_tech):
         self.data = fromarray(utils.Preprocessing.apply_tissue_mask(self.data, thresholding_tech))

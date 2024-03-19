@@ -1,6 +1,7 @@
 import numpy
 import cv2
-import numpy as np
+
+
 
 
 class Preprocessing:
@@ -9,7 +10,7 @@ class Preprocessing:
     def apply_tissue_mask(image, thresholding_tech, threshold=127, filter=True, rm_noise=True, noise_filter_level=50, ):
 
         print("Starting masking process")
-        image = np.asarray(image)
+        image = image.numpy()
         original_image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
@@ -60,7 +61,7 @@ class Preprocessing:
 
         height, width, _ = combined_image.shape
 
-        black_pixels = np.where(
+        black_pixels = numpy.where(
             (combined_image[:, :, 0] == 0) &
             (combined_image[:, :, 1] == 0) &
             (combined_image[:, :, 2] == 0)

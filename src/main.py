@@ -10,7 +10,7 @@ import tempfile
 from skimage.transform import resize
 from numpy import asarray
 from onnx2torch import convert
-
+from utils import Preprocessing
 vipshome = r'D:\Benutzer\Downloads\Stuff\vips-dev-w64-all-8.15.1\vips-dev-8.15\bin'
 os.environ['PATH'] = vipshome + ';' + os.environ['PATH']
 import pyvips
@@ -32,13 +32,31 @@ class PIPET:
         try:
             # Attempt to open the image with openslide
             print("Opening slide...")
-            slide = openslide.open_slide(slide_path)
+            if not tissue_mask:
+                slide = openslide.open_slide(slide_path)
+            else:
+                temp_slide = pyvips.Image.new_from_file(slide_path)
+                temp_slide = Preprocessing.apply_tissue_mask(temp_slide, thresholding_tech)
+                temp_slide = pyvips.Image.new_from_array(temp_slide)
+                # write a tempfile to disk
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.tiff') as temp_file:
+                    temp_slide.write_to_file(temp_file.name, pyramid=True, tile=True, compression="jpeg")
+
+                del temp_slide
+
+                slide = openslide.open_slide(temp_file.name)
 
         except openslide.OpenSlideUnsupportedFormatError:
-            print("Openslide did not recognize this file, converting now...")
+            print("Converting file...")
             # If openslide cannot open the image format, catch the error
             # and then open the image with pyvips to convert it to a format openslide can read
             temp_slide = pyvips.Image.new_from_file(slide_path)
+
+            if tissue_mask:
+                temp_slide = pyvips.Image.new_from_file(slide_path)
+                temp_slide = Preprocessing.apply_tissue_mask(temp_slide, thresholding_tech)
+                temp_slide = pyvips.Image.new_from_array(temp_slide)
+
             # write a tempfile to disk
             with tempfile.NamedTemporaryFile(delete=False, suffix='.tiff') as temp_file:
                 temp_slide.write_to_file(temp_file.name, pyramid=True, tile=True, compression="jpeg")
@@ -64,8 +82,7 @@ class PIPET:
         vips_output = pyvips.Image.black(slide_dimensions[0], slide_dimensions[1])
 
         for slices in slice_list:
-            evaluated_slice = PIPET.run_inference(slices, pytorch_model, ml_input_width, ml_input_height, tissue_mask,
-                                                  thresholding_tech)
+            evaluated_slice = PIPET.run_inference(slices, pytorch_model, ml_input_width, ml_input_height)
             vips_output = PIPET.stitch_slide(evaluated_slice, vips_output)
 
         PIPET.save_slide(vips_output)
@@ -121,10 +138,8 @@ class PIPET:
         return slice_positions
 
     @staticmethod
-    def run_inference(slice, pytorch_model, input_x, input_y, tissue_mask, thresholding_tech):
+    def run_inference(slice, pytorch_model, input_x, input_y):
 
-        if tissue_mask:
-            slice.apply_tissuemask(thresholding_tech)
 
         if slice.evaluate():
             print("evaluating...")
@@ -146,32 +161,6 @@ class PIPET:
             print("skipped slice")
 
         return slice
-
-
-    @staticmethod #TODO Fix this, it somehow doesnt read the image correctly, puts white lines in between actual data, right side seems broken aswell
-    def pil_to_pyvips(pil_image, tile_size):
-
-        width, height = pil_image.size
-
-        pyvips_image = pyvips.Image.black(width, height)
-
-
-        for y in range(0, height, tile_size):
-            for x in range(0, width, tile_size):
-
-                # Extract the tile from the PIL image
-                tile = pil_image.crop((x, y, x+tile_size, y+tile_size))
-
-                # Convert the tile to a pyvips image
-                tile_vips = pyvips.Image.new_from_memory(tile.tobytes(), tile.width, tile.height, bands=3,
-                                                         format="uchar")
-
-                # Paste the tile into the pyvips image
-                pyvips_image = pyvips_image.insert(tile_vips, x, y)
-                pyvips_image.write_to_file(r'G:\Documents\Bachelor Data\step '+str(y)+'.tiff', pyramid=True, tile=True,
-                            compression="jpeg")
-
-        return pyvips_image
 
 
 if __name__ == "__main__":
