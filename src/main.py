@@ -1,180 +1,180 @@
 import PIL.Image
-import numpy as np
 from PIL import Image
 import math
 from slice import Slice
-import utils
 import numpy
 import torch
 import onnx
 import os
 import tempfile
-
-from os import path, listdir
-from typing import Union, Tuple
-from skimage import io
-from pyvips import Image as VipsImage, BandFormat
 from skimage.transform import resize
-from torch import from_numpy, float32
-from numpy import uint8, concatenate, ubyte, asarray
-from tqdm import tqdm
-
+from numpy import asarray
 from onnx2torch import convert
 
 vipshome = r'D:\Benutzer\Downloads\Stuff\vips-dev-w64-all-8.15.1\vips-dev-8.15\bin'
 os.environ['PATH'] = vipshome + ';' + os.environ['PATH']
 import pyvips
+
 PIL.Image.MAX_IMAGE_PIXELS = None
 OPENSLIDE_PATH = r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\openslide-win64-20231011\openslide-win64-20231011\bin'
-
 if hasattr(os, 'add_dll_directory'):
     with os.add_dll_directory(OPENSLIDE_PATH):
-        import openslide #as OpenSlide
-        from openslide.deepzoom import DeepZoomGenerator
+        import openslide
 else:
     import openslide
 
 
-class SlideSlicer:
-    def __init__(self, slide_path, width, height):
-        self.slide_path = slide_path
-        self.slice_width = width
-        self.slice_height = height
-        self.slide = None
+class PIPET:
+    @staticmethod
+    def segment_slide(slide_path, model_path, slice_width, slice_height, ml_input_width, ml_input_height, tissue_mask,
+                      thresholding_tech):
 
-    def open_slide(self,tissue_mask):
         try:
             # Attempt to open the image with openslide
-            temp_slide = openslide.open_slide(self.slide_path)
-            # Apply tissue mask if necessary
-            if tissue_mask:
-                temp_slide = temp_slide.read_region((0, 0), 0, temp_slide.dimensions)
-                temp_slide = utils.Preprocessing.apply_tissue_mask(numpy.array(temp_slide), "OTSU")
-                # Write temporary file
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.tiff') as temp_file:
-                    temp_vips = pyvips.Image.new_from_memory(temp_slide.data, temp_slide.shape[1], temp_slide.shape[0], 3, "uchar")
-                    temp_vips.write_to_file(temp_file.name, pyramid=True, tile=True, compression="jpeg")
-
-                temp_slide = openslide.open_slide(temp_file.name)
-                del temp_vips
+            print("Opening slide...")
+            slide = openslide.open_slide(slide_path)
 
         except openslide.OpenSlideUnsupportedFormatError:
             print("Openslide did not recognize this file, converting now...")
             # If openslide cannot open the image format, catch the error
-            # and then open the image with Pillow to convert it
-            temp_slide = Image.open(self.slide_path)
-            temp_array = np.array(temp_slide)
-
-            if tissue_mask:
-                temp_array = utils.Preprocessing.apply_tissue_mask(temp_array, "OTSU")
-
+            # and then open the image with pyvips to convert it to a format openslide can read
+            temp_slide = pyvips.Image.new_from_file(slide_path)
+            # write a tempfile to disk
             with tempfile.NamedTemporaryFile(delete=False, suffix='.tiff') as temp_file:
-                temp_vips = pyvips.Image.new_from_memory(temp_array.data, temp_array.shape[1], temp_array.shape[0], 3, "uchar")
-                temp_vips.write_to_file(temp_file.name, pyramid=True, tile=True, compression="jpeg")
+                temp_slide.write_to_file(temp_file.name, pyramid=True, tile=True, compression="jpeg")
 
-            temp_slide.close()
-            del temp_array
-            del temp_vips
+            del temp_slide
 
-            temp_slide = openslide.open_slide(temp_file.name)
+            slide = openslide.open_slide(temp_file.name)
 
-        #this is for testing ONLY
-        excerpt = temp_slide.read_region((0, 0), 0, temp_slide.dimensions)
-        excerpt.save(r'G:\Documents\Bachelor Data\fresh_from_thresholding.tiff')
+        onnx_model = onnx.load_model(model_path)
+        onnx.checker.check_model(onnx_model)
+        pytorch_model = convert(onnx_model)
+        pytorch_model.eval()
 
-        self.slide = temp_slide
+        slide_dimensions = slide.dimensions
         print("Opened image with properties: ")
-        print(self.slide.properties)
-        self.define_slices()
+        print(slide.properties)
 
-    def close_slide(self):
-        if self.slide is not None:
-            self.slide.close()
-            self.slide = None
+        # start the pipeline
+        slice_positions = PIPET.define_slices(slide, slice_height, slice_width)
+        slice_list = PIPET.slice_slide(slice_positions, slide, slice_width, slice_height)
+        PIPET.close_slide(slide)
 
+        vips_output = pyvips.Image.black(slide_dimensions[0], slide_dimensions[1])
 
-    def stitch_slide(self, slice_list):
-        stitched_image = Image.new('RGB', self.slide.dimensions, "white")
-        for slice in slice_list:
-            print("Stitching slice to:"+str(slice.location))
-            stitched_image.paste(slice.data, slice.location)
-            #slice.close()
-        self.save_slice(stitched_image,True)
+        for slices in slice_list:
+            evaluated_slice = PIPET.run_inference(slices, pytorch_model, ml_input_width, ml_input_height, tissue_mask,
+                                                  thresholding_tech)
+            vips_output = PIPET.stitch_slide(evaluated_slice, vips_output)
 
-
-
-
+        PIPET.save_slide(vips_output)
 
         return
 
-    def slice_slide(self, slice_positions):
+    @staticmethod
+    def close_slide(slide):
+        if slide is not None:
+            slide.close()
+
+    @staticmethod
+    def stitch_slide(slice, blank):
+        print("Stitching slice to:" + str(slice.location))
+        # We want to have the large file as PyVips, as this library is used to saving our large image in the end.
+        vips_slice = pyvips.Image.new_from_array(asarray(slice.data))
+        blank = blank.insert(vips_slice, slice.location[0], slice.location[1])
+        slice.close()
+        return blank
+
+    @staticmethod
+    def slice_slide(slice_positions, slide, slice_width, slice_height):
         slice_list = []
         for slice_position in slice_positions:
-            print("Slicing "+f'{slice_position[0]}{slice_position[1]}')
-            slice = self.slide.read_region(slice_position, 0, (self.slice_width, self.slice_height))
-            temp_slice = Slice(slice, slice_position, self.slice_width, self.slice_height)
-            slice_list.append(self.run_model(temp_slice))
-        self.stitch_slide(slice_list)
-        return
+            print("Slicing " + f'{slice_position[0]}' + ':' + f'{slice_position[1]}')
+            slice = slide.read_region(slice_position, 0, (slice_width, slice_height))
+            temp_slice = Slice(slice, slice_position, slice_width, slice_height)
+            slice_list.append(temp_slice)
 
-    def save_slice(self, slice, complete_slice):
-
-        if complete_slice:
-            print("Writing finished image.")
-            pyvips.Image.new_from_array(slice).write_to_file(r'G:\Documents\Bachelor Data\slice complete compressed.tiff',pyramid=True, tile=True, compression="jpeg")
-        else:
-            print("Writing:"+str(slice.location)+" ")
-            slice.data.save(r'G:\Documents\Bachelor Data\scanned_slice '+str(slice.location) +'.tiff')
-
-        slice.close()
-
-        return
-
-    def define_slices(self):
-        print("Defining slices.")
-        slide_width, slide_height = self.slide.dimensions
-        self.vertical_slices = math.ceil(slide_height / self.slice_height)
-        self.horizontal_slices = math.ceil(slide_width / self.slice_width)
-        slice_positions = []
-        for i in range(self.horizontal_slices):
-            for y in range(self.vertical_slices):
-                slice_positions.append((i * self.slice_height, y * self.slice_width))
-        print("Defined: ",len(slice_positions)," Slices.")
-        self.slice_slide(slice_positions)
-        return
-
-    def resize_slices(self,slice_list, resize_size):
-        for slice in slice_list:
-            slice.data = slice.data.resize(resize_size)
         return slice_list
 
+    @staticmethod
+    def save_slide(slide):
+        print("Writing finished image.")
+        slide.write_to_file(r'G:\Documents\Bachelor Data\slice complete compressed.tiff', pyramid=True, tile=True,
+                            compression="jpeg")
 
-    def run_model(self, slice):
+        return
 
-        onnx_model = onnx.load_model(r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\ENTE\data\seg_mod_256_2023-02-15.onnx')
-        pytorch_model = convert(onnx_model)
-        #pytorch_model.eval()
+    @staticmethod
+    def define_slices(slide, slice_height, slice_width):
+        print("Defining slices.")
+        slide_width, slide_height = slide.dimensions
+        vertical_slices = math.ceil(slide_height / slice_height)
+        horizontal_slices = math.ceil(slide_width / slice_width)
+        slice_positions = []
 
-        slice.data = slice.data.convert("RGB")
-        temp_slice = resize(asarray(slice.data),(256,256))
-        transformed_input = torch.from_numpy(temp_slice).type(torch.float32).permute(2, 0, 1)
+        for i in range(horizontal_slices):
+            for y in range(vertical_slices):
+                slice_positions.append((i * slice_height, y * slice_width))
+        print("Defined: ", len(slice_positions), " Slices.")
 
-        output = pytorch_model(transformed_input)
+        return slice_positions
 
-        output = output.sigmoid()
-        output = output.squeeze(0).squeeze(0)
-        img_array = output.detach().numpy()
-        img_array = resize(img_array, (1024, 1024))
+    @staticmethod
+    def run_inference(slice, pytorch_model, input_x, input_y, tissue_mask, thresholding_tech):
 
-        slice.data = Image.fromarray((img_array*255).astype(numpy.uint8))
-        #slice.data = slice.data.point(lambda x: 1 if x > 120 else 0, mode='1')
+        if tissue_mask:
+            slice.apply_tissuemask(thresholding_tech)
+
+        if slice.evaluate():
+            print("evaluating...")
+            slice.data = slice.data.convert("RGB")
+            temp_slice = resize(asarray(slice.data), (input_x, input_y))
+            transformed_input = torch.from_numpy(temp_slice).type(torch.float32).permute(2, 0, 1)
+
+            output = pytorch_model(transformed_input)
+
+            output = output.sigmoid()
+            output = output.squeeze(0).squeeze(0)
+            img_array = output.detach().numpy()
+            img_array = resize(img_array, (slice.sizey, slice.sizex))
+
+            slice.data = Image.fromarray((img_array * 255).astype(numpy.uint8))
+            slice.data = slice.data.point(lambda x: 1 if x > 120 else 0, mode='1')
+
+        else:
+            print("skipped slice")
 
         return slice
 
 
+    @staticmethod #TODO Fix this, it somehow doesnt read the image correctly, puts white lines in between actual data, right side seems broken aswell
+    def pil_to_pyvips(pil_image, tile_size):
+
+        width, height = pil_image.size
+
+        pyvips_image = pyvips.Image.black(width, height)
+
+
+        for y in range(0, height, tile_size):
+            for x in range(0, width, tile_size):
+
+                # Extract the tile from the PIL image
+                tile = pil_image.crop((x, y, x+tile_size, y+tile_size))
+
+                # Convert the tile to a pyvips image
+                tile_vips = pyvips.Image.new_from_memory(tile.tobytes(), tile.width, tile.height, bands=3,
+                                                         format="uchar")
+
+                # Paste the tile into the pyvips image
+                pyvips_image = pyvips_image.insert(tile_vips, x, y)
+                pyvips_image.write_to_file(r'G:\Documents\Bachelor Data\step '+str(y)+'.tiff', pyramid=True, tile=True,
+                            compression="jpeg")
+
+        return pyvips_image
+
+
 if __name__ == "__main__":
-    slide_slicer = SlideSlicer(r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\Openslided Images\sample5K.tif',
-                               1024, 1024)
-    slide_slicer.open_slide(False)
-    #run_segmentation_pipeline(r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\Openslided Images\sample5K.tif', r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\ENTE\data\seg_mod_256_2023-02-15.onnx',
-    #                          (1024,1024),(1, 3, 256, 256), r'G:\Documents\Bachelor Data',False)
+    PIPET.segment_slide(r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\Openslide Images\sample.tif',
+                        r'C:\Users\fabio\OneDrive\Studium\Semester 7\Bachelor\ENTE\data\seg_mod_256_2023-02-15.onnx'
+                        , 1024, 1024, 256, 256, True, "OTSU")

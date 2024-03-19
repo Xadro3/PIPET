@@ -1,8 +1,10 @@
 import cv2
 import numpy
+from PIL.Image import fromarray
 import os
 vipshome = r'D:\Benutzer\Downloads\Stuff\vips-dev-w64-all-8.15.1\vips-dev-8.15\bin'
 os.environ['PATH'] = vipshome + ';' + os.environ['PATH']
+import utils
 
 
 class Slice:
@@ -21,10 +23,13 @@ class Slice:
     def evaluate(self):
 
         temp_data = numpy.asarray(self.data)
-        temp_data = cv2.cvtColor(temp_data,cv2.COLOR_RGB2GRAY)
-        if cv2.countNonZero(temp_data)<=0:
+        temp_data = cv2.cvtColor(temp_data, cv2.COLOR_RGB2GRAY)
+        if cv2.countNonZero(temp_data) == temp_data.size:
             print("Slice contains data.")
             return True
         else:
             print("Slice does not contain data")
             return False
+
+    def apply_tissuemask(self, thresholding_tech):
+        self.data = fromarray(utils.Preprocessing.apply_tissue_mask(self.data, thresholding_tech))
