@@ -2,12 +2,11 @@ import numpy
 import cv2
 
 
-
-
 class Preprocessing:
 
     @staticmethod
-    def apply_tissue_mask(image, thresholding_tech, threshold=127, filter=True, rm_noise=True, noise_filter_level=50, ):
+    def apply_tissue_mask(image, thresholding_tech="OTSU", threshold=127, filter=True, rm_noise=True,
+                          noise_filter_level=50, ):
 
         print("Starting masking process")
         image = image.numpy()
@@ -20,13 +19,15 @@ class Preprocessing:
             image = cv2.morphologyEx(image, cv2.MORPH_OPEN, kernel)
             image = cv2.medianBlur(image, 5)
             image = cv2.morphologyEx(image, cv2.MORPH_CLOSE, kernel)
-
         if thresholding_tech == "OTSU":
+
             mask = Preprocessing.otsus_binarization(image, filter)
+
         elif thresholding_tech == "ADAPTIVE":
-            Preprocessing.adaptive_thresholding()
+            mask = Preprocessing.adaptive_thresholding(image, filter)
+
         elif thresholding_tech == "SIMPLE":
-            Preprocessing.simple_thresholding(threshold)
+            mask = Preprocessing.simple_thresholding(image, filter, threshold)
 
         combined_image = Preprocessing.merge(original_image, mask)
         del original_image
@@ -45,9 +46,28 @@ class Preprocessing:
 
         return mask
 
-    # def adaptive_thresholding(self):
+    @staticmethod
+    def adaptive_thresholding(image, filter):
+        print("applying adaptive_thresholding")
+        if filter:
+            blurred_image = cv2.GaussianBlur(image, (5, 5), 0)
+            mask = cv2.adaptiveThreshold(blurred_image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+        else:
+            mask = cv2.adaptiveThreshold(image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
 
-    # def simple_thresholding(self, threshold):
+        return mask
+
+    @staticmethod
+    def simple_thresholding(image, filter, threshold):
+        print("applying simple_thresholding")
+        if filter:
+            blurred_image = cv2.GaussianBlur(image, (5, 5), 0)
+            ret, mask = cv2.threshold(blurred_image, threshold, 255, cv2.THRESH_BINARY)
+        else:
+            ret, mask = cv2.threshold(image, threshold, 255, cv2.THRESH_BINARY)
+
+        return mask
+
     @staticmethod
     def merge(image, mask):
         print("merging mask with source.")
@@ -59,14 +79,13 @@ class Preprocessing:
 
         combined_image = cv2.bitwise_and(image, image, mask=mask)
 
-        height, width, _ = combined_image.shape
-
         black_pixels = numpy.where(
             (combined_image[:, :, 0] == 0) &
             (combined_image[:, :, 1] == 0) &
             (combined_image[:, :, 2] == 0)
         )
         combined_image[black_pixels] = [255, 255, 255]
+        # cv2.imwrite("combinedimagewhite.jpg", combined_image)
 
         combined_image = cv2.cvtColor(combined_image, cv2.COLOR_BGR2RGB)
 
